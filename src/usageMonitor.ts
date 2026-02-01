@@ -3,6 +3,7 @@ import * as https from 'https';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
+import initSqlJs = require('sql.js');
 
 interface UsageData {
     numRequests: number;
@@ -76,23 +77,27 @@ export class UsageMonitor {
             try {
                 if (!fs.existsSync(dbPath)) continue;
                 
-                // Use dynamic import for better-sqlite3
-                const Database = require('better-sqlite3');
-                const db = new Database(dbPath, { readonly: true });
+                // Read file buffer
+                const fileBuffer = fs.readFileSync(dbPath);
+                
+                // Initialize sql.js
+                const SQL = await initSqlJs();
+                const db = new SQL.Database(fileBuffer);
                 
                 try {
-                    const row = db.prepare(
-                        "SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'"
-                    ).get() as { value: string } | undefined;
-                    
-                    if (row?.value) {
-                        // Token is stored as JSON string
-                        const parsed = JSON.parse(row.value);
-                        if (typeof parsed === 'string') {
-                            return parsed;
+                    const stmt = db.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken'");
+                    if (stmt.step()) {
+                        const row = stmt.getAsObject();
+                        if (row && row.value) {
+                             // Token is stored as JSON string
+                            const parsed = JSON.parse(row.value as string);
+                            if (typeof parsed === 'string') {
+                                return parsed;
+                            }
+                            return parsed.accessToken || parsed;
                         }
-                        return parsed.accessToken || parsed;
                     }
+                    stmt.free();
                 } finally {
                     db.close();
                 }
