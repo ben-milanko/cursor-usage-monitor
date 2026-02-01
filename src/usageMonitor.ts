@@ -15,6 +15,8 @@ interface CursorUsageResponse {
     'gpt-4': UsageData;
     'gpt-3.5-turbo': UsageData;
     'gpt-4-32k': UsageData;
+    'claude-3-opus': UsageData;
+    'claude-3.5-sonnet': UsageData;
     startOfMonth: string;
     [key: string]: UsageData | string;
 }
@@ -76,21 +78,12 @@ export class UsageMonitor {
 
     private async getSessionToken(): Promise<string | undefined> {
         const dbPaths = this.getPossibleDbPaths();
-        console.log('[CursorUsage] Searching for token in:', dbPaths);
         
         for (const dbPath of dbPaths) {
             try {
-                if (!fs.existsSync(dbPath)) {
-                    console.log(`[CursorUsage] Path does not exist: ${dbPath}`);
-                    continue;
-                }
-                
-                if (!dbPath.endsWith('.vscdb')) {
-                    console.log(`[CursorUsage] Skipping non-vscdb: ${dbPath}`);
-                    continue;
-                }
+                if (!fs.existsSync(dbPath)) continue;
+                if (!dbPath.endsWith('.vscdb')) continue;
 
-                console.log(`[CursorUsage] Reading DB: ${dbPath}`);
                 const fileBuffer = fs.readFileSync(dbPath);
                 const SQL = await initSqlJs();
                 const db = new SQL.Database(fileBuffer);
@@ -101,7 +94,6 @@ export class UsageMonitor {
                         const row = stmt.getAsObject();
                         if (row && row.value) {
                             const valueStr = row.value as string;
-                            console.log('[CursorUsage] Raw token value from DB found');
                             try {
                                 const parsed = JSON.parse(valueStr);
                                 if (typeof parsed === 'string') return parsed;
@@ -129,8 +121,7 @@ export class UsageMonitor {
         
         if (process.platform === 'darwin') {
             paths.push(
-                path.join(home, 'Library/Application Support/Cursor/User/globalStorage/state.vscdb'),
-                path.join(home, 'Library/Application Support/Cursor/User/globalStorage/storage.json')
+                path.join(home, 'Library/Application Support/Cursor/User/globalStorage/state.vscdb')
             );
         } else if (process.platform === 'win32') {
             const appData = process.env.APPDATA || path.join(home, 'AppData/Roaming');
@@ -142,9 +133,31 @@ export class UsageMonitor {
         return paths;
     }
 
+    private decodeUserId(token: string): string {
+        try {
+            // Handle :: format
+            if (token.includes('::')) {
+                return token.split('::')[0];
+            }
+            if (token.includes('%3A%3A')) {
+                return token.split('%3A%3A')[0];
+            }
+
+            // Handle JWT format
+            const parts = token.split('.');
+            if (parts.length === 3) {
+                const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+                if (payload.sub) return payload.sub;
+            }
+        } catch (e) {
+            console.error('[CursorUsage] Token decode error:', e);
+        }
+        return token;
+    }
+
     private async fetchUsage(token: string): Promise<{ models: ModelUsage[], startOfMonth: string }> {
         return new Promise((resolve, reject) => {
-            const userId = token.split('%3A%3A')[0];
+            const userId = this.decodeUserId(token);
             const url = `https://cursor.com/api/usage?user=${encodeURIComponent(userId)}`;
             console.log(`[CursorUsage] Requesting: ${url}`);
             
@@ -152,8 +165,10 @@ export class UsageMonitor {
                 method: 'GET',
                 headers: {
                     'Cookie': `WorkosCursorSessionToken=${token}`,
-                    'User-Agent': 'Mozilla/5.0',
-                    'Accept': 'application/json'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json',
+                    'Origin': 'https://cursor.com',
+                    'Referer': 'https://cursor.com/dashboard'
                 }
             }, (res) => {
                 console.log(`[CursorUsage] API Status: ${res.statusCode}`);
@@ -161,20 +176,20 @@ export class UsageMonitor {
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
                     try {
+                        if (res.statusCode !== 200) {
+                            throw new Error(`API returned ${res.statusCode}: ${data}`);
+                        }
                         const json: CursorUsageResponse = JSON.parse(data);
                         const models = this.parseUsage(json);
                         resolve({ models, startOfMonth: json.startOfMonth });
                     } catch (err) {
-                        console.error('[CursorUsage] API Parse Error:', data);
+                        console.error('[CursorUsage] API Error:', data);
                         reject(err);
                     }
                 });
             });
 
-            req.on('error', (e) => {
-                console.error('[CursorUsage] Request Error:', e);
-                reject(e);
-            });
+            req.on('error', (e) => reject(e));
             req.end();
         });
     }
@@ -184,7 +199,9 @@ export class UsageMonitor {
         const modelNames: Record<string, string> = {
             'gpt-4': 'Premium (Fast)',
             'gpt-3.5-turbo': 'Standard',
-            'gpt-4-32k': 'Usage-Based'
+            'gpt-4-32k': 'Usage-Based',
+            'claude-3-opus': 'Claude 3 Opus',
+            'claude-3.5-sonnet': 'Claude 3.5 Sonnet'
         };
 
         for (const [key, value] of Object.entries(data)) {
@@ -213,12 +230,10 @@ export class UsageMonitor {
     }
 
     private updateStatusBar(models: ModelUsage[]) {
-        console.log('[CursorUsage] Updating Status Bar with models:', JSON.stringify(models));
-        // Fallback: If no "Premium (Fast)" found, just pick the first model with a limit
+        // Prefer Premium (Fast) or the first model with a limit
         let model = models.find(m => m.name === 'Premium (Fast)') || models.find(m => m.limit !== null);
         
         if (!model) {
-            console.log('[CursorUsage] No displayable model found in:', JSON.stringify(models));
             this.statusBarItem.text = '$(pulse) Cursor: No data';
             this.statusBarItem.show();
             return;
