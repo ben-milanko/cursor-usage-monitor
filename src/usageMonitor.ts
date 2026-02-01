@@ -77,6 +77,9 @@ export class UsageMonitor {
             try {
                 if (!fs.existsSync(dbPath)) continue;
                 
+                // Only process sqlite files
+                if (!dbPath.endsWith('.vscdb')) continue;
+
                 // Read file buffer
                 const fileBuffer = fs.readFileSync(dbPath);
                 
@@ -89,12 +92,18 @@ export class UsageMonitor {
                     if (stmt.step()) {
                         const row = stmt.getAsObject();
                         if (row && row.value) {
-                             // Token is stored as JSON string
-                            const parsed = JSON.parse(row.value as string);
-                            if (typeof parsed === 'string') {
-                                return parsed;
+                            const valueStr = row.value as string;
+                            try {
+                                // Try to parse as JSON first (some versions might store it as a JSON string)
+                                const parsed = JSON.parse(valueStr);
+                                if (typeof parsed === 'string') {
+                                    return parsed;
+                                }
+                                return parsed.accessToken || parsed;
+                            } catch (e) {
+                                // If not JSON, it's likely the raw token string (starting with eyJ...)
+                                return valueStr;
                             }
-                            return parsed.accessToken || parsed;
                         }
                     }
                     stmt.free();
