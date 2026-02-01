@@ -1,0 +1,60 @@
+{
+  "name": "cursor-usage-monitor",
+  "displayName": "Cursor Usage Monitor",
+  "description": "Monitor your Cursor Pro premium model usage (Opus, Sonnet, etc.) in the status bar",
+  "version": "0.1.0",
+  "publisher": "ben-milanko",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ben-milanko/cursor-usage-monitor"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursor-usage.refresh",
+        "title": "Cursor Usage: Refresh"
+      },
+      {
+        "command": "cursor-usage.showDetails",
+        "title": "Cursor Usage: Show Details"
+      }
+    ],
+    "configuration": {
+      "title": "Cursor Usage Monitor",
+      "properties": {
+        "cursorUsage.refreshInterval": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "description": "Refresh interval in seconds"
+        },
+        "cursorUsage.showPercentage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show usage as percentage instead of count"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.2.2"
+  }
+}
