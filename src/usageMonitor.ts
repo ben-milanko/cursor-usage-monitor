@@ -51,39 +51,47 @@ export class UsageMonitor {
 
     async refresh() {
         try {
+            console.log('[CursorUsage] Refreshing usage data...');
             const token = await this.getSessionToken();
             if (!token) {
+                console.log('[CursorUsage] No session token found');
                 this.statusBarItem.text = '$(warning) Cursor: Not signed in';
                 this.statusBarItem.show();
                 return;
             }
 
+            console.log('[CursorUsage] Token found, fetching from API...');
             const usage = await this.fetchUsage(token);
+            console.log('[CursorUsage] API Response:', JSON.stringify(usage));
+            
             this.lastUsage = usage.models;
             this.startOfMonth = usage.startOfMonth;
             this.updateStatusBar(usage.models);
-        } catch (error) {
-            console.error('Failed to fetch usage:', error);
+        } catch (error: any) {
+            console.error('[CursorUsage] Refresh Error:', error);
             this.statusBarItem.text = '$(error) Cursor: Error';
             this.statusBarItem.show();
         }
     }
 
     private async getSessionToken(): Promise<string | undefined> {
-        // Cursor stores session token in SQLite DB
         const dbPaths = this.getPossibleDbPaths();
+        console.log('[CursorUsage] Searching for token in:', dbPaths);
         
         for (const dbPath of dbPaths) {
             try {
-                if (!fs.existsSync(dbPath)) continue;
+                if (!fs.existsSync(dbPath)) {
+                    console.log(`[CursorUsage] Path does not exist: ${dbPath}`);
+                    continue;
+                }
                 
-                // Only process sqlite files
-                if (!dbPath.endsWith('.vscdb')) continue;
+                if (!dbPath.endsWith('.vscdb')) {
+                    console.log(`[CursorUsage] Skipping non-vscdb: ${dbPath}`);
+                    continue;
+                }
 
-                // Read file buffer
+                console.log(`[CursorUsage] Reading DB: ${dbPath}`);
                 const fileBuffer = fs.readFileSync(dbPath);
-                
-                // Initialize sql.js
                 const SQL = await initSqlJs();
                 const db = new SQL.Database(fileBuffer);
                 
@@ -93,15 +101,12 @@ export class UsageMonitor {
                         const row = stmt.getAsObject();
                         if (row && row.value) {
                             const valueStr = row.value as string;
+                            console.log('[CursorUsage] Raw token value from DB found');
                             try {
-                                // Try to parse as JSON first (some versions might store it as a JSON string)
                                 const parsed = JSON.parse(valueStr);
-                                if (typeof parsed === 'string') {
-                                    return parsed;
-                                }
+                                if (typeof parsed === 'string') return parsed;
                                 return parsed.accessToken || parsed;
                             } catch (e) {
-                                // If not JSON, it's likely the raw token string (starting with eyJ...)
                                 return valueStr;
                             }
                         }
@@ -111,7 +116,7 @@ export class UsageMonitor {
                     db.close();
                 }
             } catch (err) {
-                console.error(`Failed to read token from ${dbPath}:`, err);
+                console.error(`[CursorUsage] DB Read Error (${dbPath}):`, err);
             }
         }
         
@@ -129,13 +134,9 @@ export class UsageMonitor {
             );
         } else if (process.platform === 'win32') {
             const appData = process.env.APPDATA || path.join(home, 'AppData/Roaming');
-            paths.push(
-                path.join(appData, 'Cursor/User/globalStorage/state.vscdb')
-            );
+            paths.push(path.join(appData, 'Cursor/User/globalStorage/state.vscdb'));
         } else {
-            paths.push(
-                path.join(home, '.config/Cursor/User/globalStorage/state.vscdb')
-            );
+            paths.push(path.join(home, '.config/Cursor/User/globalStorage/state.vscdb'));
         }
         
         return paths;
@@ -145,6 +146,7 @@ export class UsageMonitor {
         return new Promise((resolve, reject) => {
             const userId = token.split('%3A%3A')[0];
             const url = `https://cursor.com/api/usage?user=${encodeURIComponent(userId)}`;
+            console.log(`[CursorUsage] Requesting: ${url}`);
             
             const req = https.request(url, {
                 method: 'GET',
@@ -154,6 +156,7 @@ export class UsageMonitor {
                     'Accept': 'application/json'
                 }
             }, (res) => {
+                console.log(`[CursorUsage] API Status: ${res.statusCode}`);
                 let data = '';
                 res.on('data', chunk => data += chunk);
                 res.on('end', () => {
@@ -162,20 +165,22 @@ export class UsageMonitor {
                         const models = this.parseUsage(json);
                         resolve({ models, startOfMonth: json.startOfMonth });
                     } catch (err) {
+                        console.error('[CursorUsage] API Parse Error:', data);
                         reject(err);
                     }
                 });
             });
 
-            req.on('error', reject);
+            req.on('error', (e) => {
+                console.error('[CursorUsage] Request Error:', e);
+                reject(e);
+            });
             req.end();
         });
     }
 
     private parseUsage(data: CursorUsageResponse): ModelUsage[] {
         const models: ModelUsage[] = [];
-        
-        // Map API keys to friendly names
         const modelNames: Record<string, string> = {
             'gpt-4': 'Premium (Fast)',
             'gpt-3.5-turbo': 'Standard',
@@ -198,7 +203,6 @@ export class UsageMonitor {
             models.push({ name, used, limit, percentage });
         }
 
-        // Sort by percentage used (highest first)
         models.sort((a, b) => {
             if (a.percentage === null) return 1;
             if (b.percentage === null) return -1;
@@ -209,10 +213,12 @@ export class UsageMonitor {
     }
 
     private updateStatusBar(models: ModelUsage[]) {
-        // Find the premium model (gpt-4 / fast requests)
-        const premium = models.find(m => m.name === 'Premium (Fast)');
+        console.log('[CursorUsage] Updating Status Bar with models:', JSON.stringify(models));
+        // Fallback: If no "Premium (Fast)" found, just pick the first model with a limit
+        let model = models.find(m => m.name === 'Premium (Fast)') || models.find(m => m.limit !== null);
         
-        if (!premium) {
+        if (!model) {
+            console.log('[CursorUsage] No displayable model found in:', JSON.stringify(models));
             this.statusBarItem.text = '$(pulse) Cursor: No data';
             this.statusBarItem.show();
             return;
@@ -224,21 +230,18 @@ export class UsageMonitor {
         let icon = '$(check)';
         let text: string;
         
-        if (premium.limit && premium.percentage !== null) {
-            const remaining = premium.limit - premium.used;
-            const remainingPct = 100 - premium.percentage;
+        if (model.limit && model.percentage !== null) {
+            const remaining = model.limit - model.used;
+            const remainingPct = 100 - model.percentage;
             
-            if (remainingPct <= 10) {
-                icon = '$(error)';
-            } else if (remainingPct <= 30) {
-                icon = '$(warning)';
-            }
+            if (remainingPct <= 10) icon = '$(error)';
+            else if (remainingPct <= 30) icon = '$(warning)';
             
             text = showPct 
                 ? `${icon} Cursor: ${remainingPct}% left`
-                : `${icon} Cursor: ${remaining}/${premium.limit}`;
+                : `${icon} Cursor: ${remaining}/${model.limit}`;
         } else {
-            text = `${icon} Cursor: ${premium.used} used`;
+            text = `${icon} Cursor: ${model.used} used`;
         }
 
         this.statusBarItem.text = text;
@@ -247,7 +250,7 @@ export class UsageMonitor {
 
     async showDetails() {
         if (this.lastUsage.length === 0) {
-            vscode.window.showInformationMessage('No usage data available. Try refreshing.');
+            vscode.window.showInformationMessage('No usage data available.');
             return;
         }
 
@@ -258,46 +261,25 @@ export class UsageMonitor {
             if (m.limit && m.percentage !== null) {
                 const remaining = m.limit - m.used;
                 const remainingPct = 100 - m.percentage;
-                
-                if (remainingPct <= 10) {
-                    icon = '🔴';
-                } else if (remainingPct <= 30) {
-                    icon = '🟡';
-                } else {
-                    icon = '🟢';
-                }
-                
+                icon = remainingPct <= 10 ? '🔴' : (remainingPct <= 30 ? '🟡' : '🟢');
                 description = `${remaining}/${m.limit} remaining (${remainingPct}%)`;
             } else {
                 icon = '⚪';
                 description = `${m.used} requests used`;
             }
 
-            return {
-                label: `${icon} ${m.name}`,
-                description
-            };
+            return { label: `${icon} ${m.name}`, description };
         });
 
-        // Add billing cycle info
         if (this.startOfMonth) {
-            const start = new Date(this.startOfMonth);
-            items.unshift({
-                label: '📅 Billing Cycle',
-                description: `Started ${start.toLocaleDateString()}`
-            });
+            items.unshift({ label: '📅 Billing Cycle', description: `Started ${new Date(this.startOfMonth).toLocaleDateString()}` });
         }
 
-        await vscode.window.showQuickPick(items, {
-            title: 'Cursor Pro Usage',
-            placeHolder: 'Premium model usage this billing cycle'
-        });
+        await vscode.window.showQuickPick(items, { title: 'Cursor Pro Usage' });
     }
 
     dispose() {
-        if (this.refreshTimer) {
-            clearInterval(this.refreshTimer);
-        }
+        if (this.refreshTimer) clearInterval(this.refreshTimer);
         this.statusBarItem.dispose();
     }
 }
