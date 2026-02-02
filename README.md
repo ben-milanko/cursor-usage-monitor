@@ -27,22 +27,25 @@ git clone https://github.com/ben-milanko/cursor-usage-monitor.git
 cd cursor-usage-monitor
 npm install
 npm run compile
+npm run package
+cursor --install-extension cursor-usage-monitor-0.1.0.vsix
 ```
 
 Then press F5 in Cursor to launch in development mode.
 
 ## Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `cursorUsage.refreshInterval` | 60 | Refresh interval in seconds (min: 10) |
-| `cursorUsage.showPercentage` | true | Show as percentage vs count |
+| Setting                       | Default | Description                           |
+|-------------------------------|---------|---------------------------------------|
+| `cursorUsage.refreshInterval` | 60      | Refresh interval in seconds (min: 10) |
+| `cursorUsage.showPercentage`  | true    | Show as percentage vs count           |
 
 ## How It Works
 
 The extension reads your Cursor session token from the local database and queries the Cursor API at `cursor.com/api/usage` to fetch your current usage statistics.
 
 **Models tracked:**
+
 - Premium (Fast) - Your fast premium requests (Opus, Sonnet, etc.)
 - Standard - GPT-3.5 turbo requests
 - Usage-Based - Pay-per-use requests beyond your plan
