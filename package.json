@@ -1,12 +1,12 @@
 {
-  "name": "cursor-usage-monitor",
-  "displayName": "Cursor Usage Monitor",
+  "name": "cursor-pro-usage",
+  "displayName": "Cursor Pro Usage",
   "description": "Monitor your Cursor Pro premium model usage (Opus, Sonnet, etc.) in the status bar",
   "version": "0.1.0",
   "publisher": "ben-milanko",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ben-milanko/cursor-usage-monitor"
+    "url": "https://github.com/ben-milanko/cursor-pro-usage"
   },
   "engines": {
     "vscode": "^1.85.0"
@@ -30,7 +30,7 @@
       }
     ],
     "configuration": {
-      "title": "Cursor Usage Monitor",
+      "title": "Cursor Pro Usage",
       "properties": {
         "cursorUsage.refreshInterval": {
           "type": "number",

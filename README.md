@@ -1,4 +1,4 @@
-# Cursor Usage Monitor
+# Cursor Pro Usage
 
 A lightweight VS Code / Cursor extension that displays your Cursor Pro premium model usage in the status bar.
 
@@ -17,18 +17,18 @@ A lightweight VS Code / Cursor extension that displays your Cursor Pro premium m
 ### From VSIX
 
 ```bash
-cursor --install-extension cursor-usage-monitor-0.1.0.vsix
+cursor --install-extension cursor-pro-usage-0.1.0.vsix
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/ben-milanko/cursor-usage-monitor.git
-cd cursor-usage-monitor
+git clone https://github.com/ben-milanko/cursor-pro-usage.git
+cd cursor-pro-usage
 npm install
 npm run compile
 npm run package
-cursor --install-extension cursor-usage-monitor-0.1.0.vsix
+cursor --install-extension cursor-pro-usage-0.1.0.vsix
 ```
 
 Then press F5 in Cursor to launch in development mode.
